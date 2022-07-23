@@ -1,0 +1,75 @@
+---
+title: "MCMC Diagnostics for Datastream Permutations"
+output: html_notebook
+---
+
+```{r}
+library(asnipe)
+library(compiler)
+library(mcmcse)
+library(aninet)
+source("permutations.R")
+```
+
+```{r}
+set.seed(123)
+num_individuals <- 100
+num_observations <- 500
+
+adj <- diag(1, num_individuals)
+
+associations <- round(plogis(MASS::mvrnorm(num_observations, rep(-0.5, num_individuals), adj)))
+associations[1:5, 1:10]
+```
+
+```{r}
+# Run an example with bad thinning
+set.seed(123)
+gbi_null_bad <- gbi_MCMC_custom(associations, thin=1, samples=20000, chains=10, burnin=1000) # Bad
+
+# Run an example with good thinning
+set.seed(123)
+gbi_null_good <- gbi_MCMC_custom(associations, thin=10000, samples=2000, chains=10, burnin=1000) # Good
+
+# Make diagnostic plots
+plot_gbi_null_custom(gbi_null_bad, ylim=c(0, 1))
+plot_gbi_null_custom(gbi_null_good, ylim=c(0, 1))
+```
+
+```{r}
+summary(gbi_null_bad)
+summary(gbi_null_good)
+```
+
+```{r}
+plot(gbi_null_bad$mcmc[, 3], density=FALSE)
+plot(gbi_null_good$mcmc[, 3], density=FALSE)
+```
+
+```{r}
+# Calculate some summary statistics for the bad chains
+p_vals_chains <- sapply(1:10, function(i) cumsum(gbi_null_bad$mcmc[[i]][,3] > gbi_null_bad$observed[3])/(1:length(gbi_null_bad$mcmc[[i]][,3])))
+
+# How many p-values have changed by less than 0.01 in the last 1000 swaps (could be considered stable?)
+sum(abs(tail(p_vals_chains, 1)[1, ] - tail(p_vals_chains, 1000)[1, ]) < 0.01)
+
+# How many p-values give the wrong conclusion?
+sum(tail(p_vals_chains, 1)[1, ] < 0.05)
+
+# How many "stable" p-values give the wrong conclusion?
+sum(tail(p_vals_chains, 1)[1, ] < 0.05 & abs(tail(p_vals_chains, 1)[1, ] - tail(p_vals_chains, 1000)[1, ]) < 0.01)
+```
+
+```{r}
+# Calculate some summary statistics for the good chains
+p_vals_chains <- sapply(1:10, function(i) cumsum(gbi_null_good$mcmc[[i]][,3] > gbi_null_good$observed[3])/(1:length(gbi_null_good$mcmc[[i]][,3])))
+
+# How many p-values have changed by less than 0.01 in the last 1000 swaps (could be considered stable?)
+sum(abs(tail(p_vals_chains, 1)[1, ] - tail(p_vals_chains, 1000)[1, ]) < 0.01)
+
+# How many p-values give the wrong conclusion?
+sum(tail(p_vals_chains, 1)[1, ] < 0.05)
+
+# How many "stable" p-values give the wrong conclusion?
+sum(tail(p_vals_chains, 1)[1, ] < 0.05 & abs(tail(p_vals_chains, 1)[1, ] - tail(p_vals_chains, 1000)[1, ]) < 0.01)
+```

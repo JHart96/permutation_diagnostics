@@ -1,0 +1,85 @@
+```{r}
+set.seed(1)
+num_perm <- 1000
+burn_in <- 1
+step_size <- 1
+num_chains <- 4
+
+run_permutations <- function(chain_id) {
+  
+  # message_parallel("Running permutations for chain ", chain_id)
+  
+  # Permute associations and add permuted matrices to a list
+  associations_perm <- list()
+  associations_perm[[1]] <- trial_swap_gbi(associations, step_size)
+  for (perm_id in 2:num_perm) {
+    associations_perm[[perm_id]] <- trial_swap_gbi(associations_perm[[perm_id - 1]], step_size)
+  }
+  
+  # Calculate strengths of permuted networks
+  networks_perm <- lapply(1:num_perm, function(i) quiet(get_network(associations_perm[[i]])))
+  random_edge_weight <- mean(sapply(networks_perm, function(x) x[upper.tri(x)]))
+  s_values <- sapply(networks_perm, function(x) mean((x[upper.tri(x)] - random_edge_weight)^2))
+  cv_values <- sapply(networks_perm, function(x) sd(x[upper.tri(x)])/mean(x[upper.tri(x)]))
+
+  # Calculate S-statistic of observed network
+  net <- quiet(get_network(associations))
+  s_obs <- mean((net[upper.tri(net)] - random_edge_weight)^2)
+  
+  # Calculate p-values over iterations
+  p_values <- rep(0, num_perm)
+  for (i in (burn_in + 1):num_perm) {
+    p_values[i] <- mean(abs(s_obs) <= abs(s_values[burn_in:i]))
+  }
+  
+  # message_parallel("Chain ", chain_id, " complete!")
+  
+  return(list(
+    p_values=p_values[(burn_in + 1):num_perm], 
+    s_obs=s_obs,
+    s_values=s_values,
+    cv_values=cv_values
+  ))
+}
+
+chain_results <- parallel::mclapply(1:num_chains, run_permutations, mc.cores = parallel::detectCores())
+```
+
+```{r}
+for (chain_id in 1:num_chains) {
+  if (chain_id == 1) {
+    plot(chain_results[[chain_id]]$cv_values, type="l", col=chain_id)
+  } else {
+    lines(chain_results[[chain_id]]$cv_values, col=chain_id)
+  }
+  print(paste0("Effective sample size: ", round(ess(chain_results[[chain_id]]$cv_values, 1))))
+}
+```
+
+```{r}
+for (chain_id in 1:num_chains) {
+  if (chain_id == 1) {
+    plot(chain_results[[chain_id]]$s_values, type="l", col=chain_id, xlab="# iterations", ylab="S-statistic")
+  } else {
+    lines(chain_results[[chain_id]]$s_values, col=chain_id)
+  }
+  print(paste0("Effective sample size: ", round(ess(chain_results[[chain_id]]$s_values, 1))))
+}
+```
+
+```{r, fig.width=600, fig.height=400}
+for (chain_id in 1:num_chains) {
+  if (chain_id == 1) {
+    plot(chain_results[[chain_id]]$p_values, type="l", col=chain_id, xlab="# iterations", ylab="p-value", ylim=c(0, 1))
+    abline(h = 0.05, lty=2)
+  } else {
+    lines(chain_results[[chain_id]]$p_values, col=chain_id)
+  }
+  print(paste0("p-value: ", tail(chain_results[[chain_id]]$p_values, 1)))
+}
+```
+
+```{r pvals_iters, dev="png"}
+plot(chain_results[[1]]$p_values, type="l", xlab="# iterations", ylab="p-value")
+abline(h = 0.05, lty=2)
+```

@@ -1,0 +1,1 @@
+"0","plot(gbi_null_bad$mcmc[, 3], density=FALSE)"
